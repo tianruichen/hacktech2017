@@ -1,5 +1,7 @@
 # 3. Import libraries and modules
 import numpy as np
+from math import floor
+import random
 np.random.seed(123)  # for reproducibility
  
 from keras.models import Sequential
@@ -13,20 +15,28 @@ print('loading data')
 from os import listdir
 from os.path import isfile, join
 import os
-onlyfiles = [f for f in listdir('dataset')]
+onlyfiles = [f for f in listdir('newdataset')]
 onlyfiles = onlyfiles[1:]
 data = []
 label = []
 for f in onlyfiles:
-    root = 'dataset/' + f
-    endInt = int(f[1:], 2)
-    for item in listdir(root):
+    root = 'newdataset/' + f
+    endInt = int(f, 2)
+    elements = listdir(root)
+    for i in range(2, floor(len(listdir(root))/10)):
+        item = elements[i * 10]
         path = os.path.join(root, item)
         if not item.startswith('.') and os.path.isfile(path):
             data.append(np.load(path))
             label.append(endInt)
-#print(data)
-print(label)
+print('length of data:', len(data))
+print('length of label', len(label))
+
+c = list(zip(data, label))
+
+random.shuffle(c)
+
+data, label = zip(*c)
 
 X_train = np.array(data)
 y_train = np.array(label)
@@ -79,7 +89,7 @@ print('fitting model')
 print(X_train.shape)
 print(Y_train.shape)
 model.fit(X_train, Y_train, 
-          batch_size=16, nb_epoch=10, verbose=1)
+          batch_size=256, nb_epoch=10, verbose=1)
  
 # 10. Evaluate model on test data
 print('evaluating')

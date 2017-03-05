@@ -201,7 +201,7 @@ def mean(sensor, n):
     print('test')
     return s, v  
 
-p = [1]
+p = [1,0]
 f1 = [1, 0]
 f2 = [1, 0]
 f3 = [1, 0]
@@ -225,7 +225,7 @@ for label in labels:
         if not os.path.isfile('dataset/' + ''.join(str(x) for x in label) + '/' + str(i) + '.npy'):
             print('dataset/' + ''.join(str(x) for x in label) + '/' + str(i) + '.npy')
 
-'''print('starting sensor')
+print('starting sensor')
 sensor = SensorInterface()
 try:
     sensor.connect()
@@ -238,15 +238,16 @@ try:
         if not os.path.exists('dataset/' + ''.join(str(x) for x in label) + '/'):
             os.makedirs('dataset/' + ''.join(str(x) for x in label) + '/')
         for i, version in enumerate(versions):
-            mu, var = mean(sensor, 100)
-            print(label)
-            print(version)
             saved = False
             record = False
+            print(label)
+            print(version)
+            input("Press Enter to continue...")
             while not saved:
-                input("Press Enter to continue...")
+                
                 images = sensor.getAllImages()
                 record = False
+                saveimage = None
                 if len(images)>0:
                     img = images[-1]
                     image = img['image']
@@ -255,13 +256,11 @@ try:
                     img = np.array(image).astype(np.float32)
                     img = np.add(mu, -img)
                     img = np.divide(img,var)
-                    np.save('dataset/' + ''.join(str(x) for x in label) + '/' + str(i) + '.npy', img)
-                    pyplot.imshow(img)
-                    plt.show()
                     record = True
                 if record:
                     user_input = input('Yes or No?: ')
                     if user_input == '':
+                        np.save('dataset/' + ''.join(str(x) for x in label) + '/' + str(i) + '.npy', saveimage)
                         saved = True
 except KeyboardInterrupt:
-    pass'''
+    pass
