@@ -19,6 +19,7 @@ from keras.layers import Flatten
 from keras.layers.convolutional import Convolution2D
 from keras.layers.convolutional import MaxPooling2D
 from keras.utils import np_utils
+from keras.models import load_model
 from keras import backend as K
 K.set_image_dim_ordering('th')
 
@@ -344,9 +345,11 @@ def train_data():
     # Final evaluation of the model
     return model
 
-model = train_data()
+#model = train_data()
+model = load_model('model.h5')
 
 
+counter = 0
 mu, var = mean(sensor, 100)
 try:
     while True:
@@ -359,8 +362,12 @@ try:
             img = np.array(image).astype(np.float32)
             img = np.add(mu, -img)
             img = np.divide(img,var)
+            img = binarize(img)
             prediction = model.predict(img.reshape(1, 1, 46, 72),batch_size=1, verbose=0)
-            print('{0:b}'.format(2**5+np.argmax(prediction)))
+            print('{0:b}'.format(np.argmax(prediction)))
+            counter+=1
+            if counter>100:
+                mu, var = mean(sensor, 100)
             #binarized = binarize(img)
             #points = getPoints(binarized)
             #if len(points)>0:
