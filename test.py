@@ -1,7 +1,29 @@
+import os
 import sys
 import numpy as np
 import ftd2xx as FT
 import matplotlib.pylab as plt
+import itertools
+from scipy.spatial import ConvexHull
+import scipy
+import scipy.ndimage.filters
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras.utils import np_utils
+from keras.datasets import mnist
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras.layers import Flatten
+from keras.layers.convolutional import Convolution2D
+from keras.layers.convolutional import MaxPooling2D
+from keras.utils import np_utils
+from keras import backend as K
+K.set_image_dim_ordering('th')
+
+from sklearn.model_selection import StratifiedKFold
+
 from sklearn.cluster import KMeans
 crcTable = [
   0x0000,0x1021,0x2042,0x3063,0x4084,0x50A5,0x60C6,0x70E7,
@@ -196,12 +218,135 @@ def mean(sensor, n):
     print('test')
     return s, v            
 
+def binarize(img):
+    return (np.sign(img-10)+1)/2
+def getPoints(binarized):
+    points = []
+    for y in range(binarized.shape[0]):
+        for x in range(binarized.shape[1]):
+            if binarized[y,x]==1:
+                points.append([y,x])
+    points = np.array(points)
+    return points
+distance = lambda x,y: (x[0]-y[0])**2+(x[1]-y[1])**2
+def getAxis(points):
+    hull = ConvexHull(points)
+    vertices = hull.vertices
+    axis = max(itertools.combinations(hull.vertices, 2), key=lambda x:distance(points[x[0]], points[x[1]]))
+    return axis
+
+def transform(points, axis, d=0.4, orientation = 0):
+    pivot = points[axis[1-orientation]]
+    pivot1 = points[axis[orientation]]
+    perp = [(pivot1-pivot)[1],-(pivot1-pivot)[0]]
+    transformed = []
+    for point in points:
+        if not np.array_equal(point,pivot):
+            #transformed.append((np.dot(point-pivot, pivot1-pivot)/np.linalg.norm(pivot1-pivot),
+            #np.dot(perp, point-pivot)/np.linalg.norm(perp)))
+            transformed.append((np.dot(point-pivot, pivot1-pivot)/np.linalg.norm(pivot1-pivot),
+            np.arcsin((np.cross(pivot1-pivot, point-pivot)/np.linalg.norm(pivot1-pivot)/np.linalg.norm(point-pivot)))))
+    transformed = np.array(transformed)
+    transformed[:,0] = np.divide(transformed[:,0],np.linalg.norm(pivot1-pivot)/(1+d))-d
+    transformed = transformed[np.where(transformed[:,0]>0)]
+    return transformed
+xstep = 1.0/20
+ystep = 1.0/20
+isclose = lambda dist: dist*dist<(xstep*xstep+ystep*ystep)
+def dfs(marked, tree, x, y, points):
+    dist, point = tree.query([x*xstep, y*ystep])
+    if not isclose(dist) or marked[(y,x)]:
+        return 
+    else:
+        points.append([x*xstep,y*ystep])
+        marked[(y,x)] = True
+        #print(points)
+        dfs(marked, tree, x-1,y, points)
+        dfs(marked, tree, x+1,y, points)
+        dfs(marked, tree, x,y-1, points)
+        dfs(marked, tree, x,y+1, points)
+        dfs(marked, tree, x-1,y-1, points)
+        dfs(marked, tree, x-1,y+1, points)
+        dfs(marked, tree, x+1,y-1, points)
+        dfs(marked, tree, x+1,y+1, points)
+def numFingers(data):
+    mytree = scipy.spatial.cKDTree(data)
+    marked = {}
+    for y in np.arange(-2/ystep, 2/ystep):
+        for x in np.arange(-2/xstep, 2/xstep):
+            marked[(y,x)] = False
+    sets = []
+    for y in np.arange(-2/ystep, 2/ystep):
+        for x in np.arange(-2/xstep, 2/xstep):
+            dist, index = mytree.query([x*xstep, y*ystep])
+            if not marked[(y,x)] and isclose(dist):
+                testset = []
+                dfs(marked, mytree, x,y, testset)
+                arr = np.array(testset)
+                if(np.abs(np.correlate(arr[:,0], arr[:,1]))<10):
+                    sets.append(np.array(arr))
+    #print(len(sets))
+    return len(sets)
+
+def numFingers2(data):
+    n, bins, patches = plt.hist(scipy.ndimage.filters.gaussian_filter(data1[:,1],1), 40, normed=1, weights= data1[:,0], facecolor='green', alpha=0.75)
+    deltas = [n[x+1]-n[x] for x in range(len(n)-1)]
+    peaks = [bins[x+1] for x in range(len(deltas)-1) if deltas[x]*-deltas[x+1]>0.2]
+    return len(peaks)
+
 sensor = SensorInterface()
 try:
     sensor.connect()
 except:
     print("Error connecting to sensor")
     raise
+
+def baseline_model(num_classes):
+    # create model
+    model = Sequential()
+    model.add(Convolution2D(32, 5, 5, border_mode='valid', input_shape=(1, 46, 72), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Dropout(0.2))
+    model.add(Flatten())
+    model.add(Dense(128, activation='relu'))
+    model.add(Dense(num_classes, activation='softmax'))
+    # Compile model
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    return model
+
+def train_data():
+    basedir = 'dataset/'
+    xvals = []
+    yvals = []
+    for x in range(2**5, 2**6):
+        directory = basedir + '{0:b}/'.format(x)
+        for filename in os.listdir(directory):
+            xvals.append(np.load(os.path.join(directory,filename)))
+            yvals.append(x-2**5)
+    xvals = np.array(xvals)
+    yvals = np.array(yvals)
+
+    seed = 7
+    np.random.seed(seed)
+    X_train = xvals.reshape(xvals.shape[0], 1, 46, 72).astype('float32')
+    # flatten 28*28 images to a 784 vector for each image
+    # one hot encode outputs
+    y_train = np_utils.to_categorical(yvals)
+    num_classes = y_train.shape[1]
+    # build the model
+    model = baseline_model(num_classes)
+    # Fit the model
+    model.fit(X_train, y_train, validation_data=(X_train, y_train), nb_epoch=10, batch_size=200, verbose=2)
+
+
+    scores = model.evaluate(X_train, y_train, verbose=0)
+    print("Baseline Error: %.2f%%" % (100-scores[1]*100))
+    # Final evaluation of the model
+    return model
+
+model = train_data()
+
+
 mu, var = mean(sensor, 100)
 try:
     while True:
@@ -214,6 +359,15 @@ try:
             img = np.array(image).astype(np.float32)
             img = np.add(mu, -img)
             img = np.divide(img,var)
-            np.save('testclosed.npy', img)
+            prediction = model.predict(img.reshape(1, 1, 46, 72),batch_size=1, verbose=0)
+            print('{0:b}'.format(2**5+np.argmax(prediction)))
+            #binarized = binarize(img)
+            #points = getPoints(binarized)
+            #if len(points)>0:
+            #    axis = getAxis(points)
+            #    data1 = transform(points, axis, orientation=0)
+            #    data2 = transform(points, axis, orientation=1)
+            #    print(min(numFingers2(data1), numFingers2(data2)))
+            #np.save('testclosed.npy', img)
 except KeyboardInterrupt:
     pass
