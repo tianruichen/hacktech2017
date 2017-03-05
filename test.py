@@ -21,6 +21,12 @@ from keras.layers.convolutional import MaxPooling2D
 from keras.utils import np_utils
 from keras.models import load_model
 from keras import backend as K
+import time
+import pyaudio
+import wave
+import sys
+import audio
+CHUNK = 1024
 K.set_image_dim_ordering('th')
 
 from sklearn.model_selection import StratifiedKFold
@@ -347,10 +353,17 @@ def train_data():
 
 #model = train_data()
 model = load_model('model.h5')
-
-
-counter = 0
+bgm1 = audio.WavePlayerLoop('bgm14a.wav', loop=False)
+bgm2 = audio.WavePlayerLoop('bgm14b.wav', loop=False)
+bgm3 = audio.WavePlayerLoop('bgm14.wav', loop=False)
+bgm4 = audio.WavePlayerLoop('bgm14c.wav', loop=False)
+bgm1.play()
+bgm2.play()
+bgm3.play()
+bgm4.play()
+current = None
 mu, var = mean(sensor, 100)
+
 try:
     while True:
         images = sensor.getAllImages()
@@ -363,11 +376,35 @@ try:
             img = np.add(mu, -img)
             img = np.divide(img,var)
             img = binarize(img)
-            prediction = model.predict(img.reshape(1, 1, 46, 72),batch_size=1, verbose=0)
-            print('{0:b}'.format(np.argmax(prediction)))
-            counter+=1
-            if counter>100:
-                mu, var = mean(sensor, 100)
+            prediction = np.argmax(model.predict(img.reshape(1, 1, 46, 72),batch_size=1, verbose=0))
+            #print(prediction)
+            print('{0:b}'.format(prediction))
+            x = (prediction & 1) + ((prediction>>1)&1)+((prediction>>2)&1)+((prediction>>3)&1)+((prediction>>4)&1)+((prediction>>5)&1)
+            #print(x)
+            if x==1:
+                if current!=bgm1:
+                    if current!=None:
+                        current.stop()
+                    current = bgm1
+                    current.resume()
+            elif x==2 or x==3:
+                if current!=bgm2:
+                    if current!=None:
+                        current.stop()
+                    current = bgm2
+                    current.resume()
+            elif x==4 or x==5:
+                if current!=bgm3:
+                    if current!=None:
+                        current.stop()
+                    current = bgm3
+                    current.resume()
+            elif x==6:
+                if current!=bgm4:
+                    if current!=None:
+                        current.stop()
+                    current = bgm4
+                    current.resume()
             #binarized = binarize(img)
             #points = getPoints(binarized)
             #if len(points)>0:
@@ -377,4 +414,10 @@ try:
             #    print(min(numFingers2(data1), numFingers2(data2)))
             #np.save('testclosed.npy', img)
 except KeyboardInterrupt:
+    if current!=None:
+        current.stop()
+        bgm1.kill()
+        bgm2.kill()
+        bgm3.kill()
+        bgm4.kill()
     pass
